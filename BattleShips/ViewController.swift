@@ -12,6 +12,7 @@ class ViewController: UIViewController {
     // MARK: - Outlets
     
     @IBOutlet var sceneView: ARSCNView!
+    @IBOutlet var statusLabel: UILabel!
     
     // MARK: - Private properties
     
@@ -32,6 +33,12 @@ class ViewController: UIViewController {
         return (direction, position)
     }
     
+    private var score: UInt16 = 0 {
+        didSet {
+            updateStatusLabel()
+        }
+    }
+    
     // MARK: - Lifecycle
     
     override func viewDidLoad() {
@@ -44,8 +51,10 @@ class ViewController: UIViewController {
         super.viewWillAppear(animated)
         
         startSession()
-        
         spawnEnemyShip()
+        
+        // Needs to be set after SceneView is present
+        sceneView.scene.physicsWorld.contactDelegate = self
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -61,7 +70,6 @@ class ViewController: UIViewController {
         sceneView.showsStatistics = true
         sceneView.automaticallyUpdatesLighting = true
         sceneView.autoenablesDefaultLighting = true
-        sceneView.scene.physicsWorld.contactDelegate = self
         
         let scene = SCNScene()
         sceneView.scene = scene
@@ -92,6 +100,7 @@ class ViewController: UIViewController {
         torpedo.position = position
         torpedo.look(at: lookAtDirection)
         torpedo.physicsBody?.applyForce(direction, asImpulse: true)
+        
         sceneView.scene.rootNode.addChildNode(torpedo)
     }
     
@@ -115,10 +124,16 @@ class ViewController: UIViewController {
         let physicsShape = SCNPhysicsShape(geometry: shopGeometry, options: nil)
         let physicsBody = SCNPhysicsBody(type: .dynamic, shape: physicsShape)
         physicsBody.isAffectedByGravity = false
-        physicsBody.contactTestBitMask = CollisionCategory.torpedo.rawValue
+        physicsBody.categoryBitMask = CollisionCategory.alienShip.rawValue
         shipNode.physicsBody = physicsBody
         
         sceneView.scene.rootNode.addChildNode(shipNode)
+    }
+    
+    private func torpedoHitAlientShip() {
+        score += 1
+        
+        spawnEnemyShip()
     }
     
     private func playSound(_ sound: Sound) {
@@ -132,6 +147,12 @@ class ViewController: UIViewController {
             
             audioPlayer.play()
             self.audioPlayer = audioPlayer
+        }
+    }
+    
+    private func updateStatusLabel() {
+        DispatchQueue.main.async {
+            self.statusLabel.text = "Score: \(self.score)"
         }
     }
     
@@ -155,8 +176,22 @@ extension ViewController: ARSCNViewDelegate {
 // MARK: - SCNPhysicsContactDelegate
 
 extension ViewController: SCNPhysicsContactDelegate {
+    private func isContact(_ contact: SCNPhysicsContact,
+                           between categoryA: CollisionCategory,
+                           and categoryB: CollisionCategory) -> Bool {
+        return (contact.nodeA.physicsBody?.categoryBitMask == categoryA.rawValue &&
+                    contact.nodeB.physicsBody?.categoryBitMask == categoryB.rawValue) ||
+            (contact.nodeB.physicsBody?.categoryBitMask == categoryA.rawValue &&
+                contact.nodeA.physicsBody?.categoryBitMask == categoryB.rawValue)
+    }
+    
     func physicsWorld(_ world: SCNPhysicsWorld, didBegin contact: SCNPhysicsContact) {
-        
+        if isContact(contact, between: .torpedo, and: .alienShip) {
+            torpedoHitAlientShip()
+            
+            contact.nodeA.removeFromParentNode()
+            contact.nodeB.removeFromParentNode()
+        }
     }
 }
 
